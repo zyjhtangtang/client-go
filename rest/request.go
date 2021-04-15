@@ -717,7 +717,12 @@ func (r *Request) request(fn func(*http.Request, *http.Response)) error {
 
 	client := r.client
 	if client == nil {
+		klog.Infof("client is nil ,using default client...")
 		client = http.DefaultClient
+	}
+
+	if c, ok := r.client.(*http.Client); ok {
+		klog.Infof("r.client is http client : %v", c)
 	}
 
 	// Right now we make about ten retry attempts if we get a Retry-After response.
@@ -729,9 +734,9 @@ func (r *Request) request(fn func(*http.Request, *http.Response)) error {
 		if err != nil {
 			return err
 		}
-		fmt.Println("prepare send req: %v, url: %v", req, url)
+		klog.Infof("prepare send req: %v, url: %v", req, url)
 		if r.timeout > 0 {
-			fmt.Println("timeout: %v", r.timeout)
+			klog.Infof("timeout: %v", r.timeout)
 			if r.ctx == nil {
 				r.ctx = context.Background()
 			}
@@ -740,33 +745,34 @@ func (r *Request) request(fn func(*http.Request, *http.Response)) error {
 			defer cancelFn()
 		}
 		if r.ctx != nil {
+			klog.Infof("r.ctx is not null, with context.")
 			req = req.WithContext(r.ctx)
 		}
 		req.Header = r.headers
 		backTime := r.backoffMgr.CalculateBackoff(r.URL())
-		fmt.Println("backoff time: %v", backTime)
+		klog.Infof("backoff time: %v", backTime)
 		r.backoffMgr.Sleep(backTime)
 		if retries > 0 {
 			// We are retrying the request that we already send to apiserver
 			// at least once before.
 			// This request should also be throttled with the client-internal throttler.
-			fmt.Println("try throttle...")
+			klog.Infof("try throttle...")
 			if err := r.tryThrottle(); err != nil {
 				return err
 			}
-			fmt.Println("try throttle finish...")
+			klog.Infof("try throttle finish...")
 		}
-		fmt.Println("send request...")
+		klog.Infof("send request: %v", req)
 		resp, err := client.Do(req)
-		fmt.Println("send request finish...")
+		klog.Infof("send request finish...")
 		updateURLMetrics(r, resp, err)
 		if err != nil {
-			fmt.Println("update url metrics err: %v", err)
+			klog.Infof("update url metrics err: %v", err)
 			r.backoffMgr.UpdateBackoff(r.URL(), err, 0)
 		} else {
 			r.backoffMgr.UpdateBackoff(r.URL(), err, resp.StatusCode)
 		}
-		fmt.Println("update metrics url metrics finish...")
+		klog.Infof("update metrics url metrics finish...")
 		if err != nil {
 			// "Connection reset by peer" is usually a transient error.
 			// Thus in case of "GET" operations, we simply retry it.
@@ -798,25 +804,25 @@ func (r *Request) request(fn func(*http.Request, *http.Response)) error {
 
 			retries++
 			if seconds, wait := checkWait(resp); wait && retries < maxRetries {
-				fmt.Println("check wait seconds: %v, wait: %v", seconds, wait)
+				klog.Infof("check wait seconds: %v, wait: %v", seconds, wait)
 				if seeker, ok := r.body.(io.Seeker); ok && r.body != nil {
-					fmt.Println("seeker seek...")
+					klog.Infof("seeker seek...")
 					_, err := seeker.Seek(0, 0)
 					if err != nil {
 						klog.V(4).Infof("Could not retry request, can't Seek() back to beginning of body for %T", r.body)
 						fn(req, resp)
 						return true
 					}
-					fmt.Println("seeker seek finish...")
+					klog.Infof("seeker seek finish...")
 				}
 
 				klog.V(4).Infof("Got a Retry-After %ds response for attempt %d to %v", seconds, retries, url)
 				r.backoffMgr.Sleep(time.Duration(seconds) * time.Second)
 				return false
 			}
-			fmt.Println("exec fn...")
+			klog.Infof("exec fn...")
 			fn(req, resp)
-			fmt.Println("exec fn finish...")
+			klog.Infof("exec fn finish...")
 			return true
 		}()
 		if done {

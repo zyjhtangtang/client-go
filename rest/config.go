@@ -306,6 +306,7 @@ func RESTClientFor(config *Config) (*RESTClient, error) {
 	if transport != http.DefaultTransport {
 		httpClient = &http.Client{Transport: transport}
 		if config.Timeout > 0 {
+			klog.Infof("http client timeout: %v", config.Timeout)
 			httpClient.Timeout = config.Timeout
 		}
 	}
